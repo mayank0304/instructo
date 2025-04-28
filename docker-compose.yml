@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+      - python
+      - judge1
+    networks:
+      - instructo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      # MongoDB connection for Spring
+      - SPRING_DATA_MONGODB_URI=mongodb://mongodb:27017/instructo
+      - SPRING_DATA_MONGODB_DATABASE=instructo
+    depends_on:
+      - mongodb
+    networks:
+      - instructo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  python:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      # MongoDB connection for Python
+      - MONGODB_URI=mongodb://mongodb:27017/instructo
+      # Make sure to use secrets in production
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-default_key_for_dev}
+    depends_on:
+      - mongodb
+    networks:
+      - instructo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  judge1:
+    build:
+      context: ./judge1
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/instructo
+    depends_on:
+      - mongodb
+    networks:
+      - instructo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  mongodb:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    # For production, use authentication
+    # environment:
+    #   - MONGO_INITDB_ROOT_USERNAME=admin
+    #   - MONGO_INITDB_ROOT_PASSWORD=password
+    networks:
+      - instructo-network
+    command: mongod --bind_ip_all
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  instructo-network:
+    driver: bridge
+
+volumes:
+  mongodb-data:
